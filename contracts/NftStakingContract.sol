@@ -25,6 +25,9 @@ error InvalidProof();
 error RequestedMintAmountInvalid();
 error IndAmountReservedExceedsTotalReserved();
 error InvalidInternalAmount();
+error StakingActiveForThisNft();
+error OnlyOwnerCanTransferWhileStaking();
+error StakingClosed();
 
 contract NftStakingContract is ERC721A, Ownable, ReentrancyGuard {
   // declares the maximum amount of tokens that can be minted
@@ -54,10 +57,19 @@ contract NftStakingContract is ERC721A, Ownable, ReentrancyGuard {
   mapping (address => uint256) private reservedMints;
   uint256 public totalReserved = 1;
 
+  // staking
+  mapping(uint256 => uint256) private stakingStarted; // staking start time, if 0 token is currently unstaked
+  mapping(uint256 => uint256) private stakingTotal; // cumulative staking total per token
+  uint256 private stakingTransfer = 1; // control for transfers while staking, if set to 2 then transfers are enabled
+  bool public stakingOpen = false;
+
   using Strings for uint256;
 
   constructor (bytes32 _root) ERC721A("Advanced NFT", "ANFT") {
     root = _root;
+
+    // Update with actual reserve addresses, don't forget to update totalReserved
+    reservedMints[_msgSender()] = 1;
   }
 
   function internalMint(uint256 _amt) external nonReentrant {
@@ -162,20 +174,81 @@ contract NftStakingContract is ERC721A, Ownable, ReentrancyGuard {
   }
 
   /*
-  Usage of _beforeTokenTransfers hook from ERC721A to add some require statements for transfers/mints that accomplishes:
-
-  1) Only allowing 1 token per wallet
-  2) Disallowing transfers of tokens when allTransfersDisabled flag is set to true
-  3) Exceptions to #2 is minting and refunds
+  Usage of _beforeTokenTransfers hook from ERC721A to add revert statements for transfers that prevents staked tokens from being transfered
   */
 
   function _beforeTokenTransfers(
-    address from,
-    address to,
-    uint256,
+    address,
+    address,
+    uint256 startTokenId,
     uint256 quantity
   ) internal view override {
+    uint256 tokenId = startTokenId;
+    for (uint256 end = tokenId + quantity; tokenId < end; ++tokenId) {
+      if(stakingStarted[tokenId] != 0 || stakingTransfer == 1) revert StakingActiveForThisNft();
+    }
+  }
 
+  // staking functions and events
+
+  // emitted when a token is staked
+  event Staked(uint256 indexed tokenId);
+
+
+  // emitted when a token is unstaked
+  event Unstaked(uint256 indexed tokenId);
+
+  // returning staking period data
+  function stakingPeriod(uint256 tokenId) external view returns (
+    bool staking, // whether or not nft is staking
+    uint256 current, // current stake period if so
+    uint256 total // lifetime stake period
+  ) {
+    uint256 start = stakingStarted[tokenId];
+    if (start != 0) {
+      staking = true;
+      current = block.timestamp - start;
+    }
+    total = current + stakingTotal[tokenId];
+  }
+
+  // transfer while staking
+  function safeTransferWhileStaking(
+    address from,
+    address to, 
+    uint256 tokenId
+  ) external {
+    if (ownerOf(tokenId) != _msgSender()) revert OnlyOwnerCanTransferWhileStaking();
+    stakingTransfer = 2; 
+    safeTransferFrom(from, to, tokenId);
+    stakingTransfer = 1;
+  }
+
+  // open/close staking globally
+  function setStakingOpen(bool open) external onlyOwner {
+    stakingOpen = open;
+  }
+
+  // toggle staking 
+  function toggleStaking(uint256 tokenId) internal onlyApprovedOrOwner(tokenId) {
+    uint256 start = stakingStarted[tokenId];
+    if(start == 0) {
+      if (!stakingOpen) revert StakingClosed();
+      stakingStarted[tokenId] = block.timestamp;
+      emit Staked(tokenId);
+    }else {
+      stakingTotal[tokenId] += block.timestamp - start;
+      stakingStarted[tokenId] = 0;
+      emit Unstaked(tokenId);
+    }
+  }
+
+  // toggle staking, callable from frontend w support for multiple tokens
+  function toggleStaking(uint256[] calldata tokenIds) external {
+    uint256 n = tokenIds.length;
+    for (uint256 i = 0; i < n; i++) {
+      toggleStaking(tokenIds[i]);
+    }
   }
 
   function withdrawEth() public onlyOwner nonReentrant {
@@ -195,5 +268,14 @@ contract NftStakingContract is ERC721A, Ownable, ReentrancyGuard {
 
   fallback() external payable {
     revert AnIncorrectFunctionWasCalled();
+  }
+
+  modifier onlyApprovedOrOwner(uint256 tokenId) {
+    require(
+      _ownershipOf(tokenId).addr == _msgSender() ||
+        getApproved(tokenId) == _msgSender(),
+      "ERC721ACommon: Not approved nor owner"
+    );
+    _;
   }
 }
