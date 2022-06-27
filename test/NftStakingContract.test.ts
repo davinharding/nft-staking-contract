@@ -141,8 +141,8 @@ describe("NftStakingContract", () => {
     nftStakingContract.setPublicMintActive(true);
 
     await expect(
-      nftStakingContract.publicMint(2, {
-        value: ethers.utils.parseEther(".16"),
+      nftStakingContract.publicMint(3, {
+        value: ethers.utils.parseEther(".24"),
       })
     ).to.be.revertedWith("TooManyNFTsInSingleTx");
   });
@@ -236,12 +236,12 @@ describe("NftStakingContract", () => {
     ).to.be.revertedWith("ContractDoesNotAllowReceiptOfTokens");
   });
 
-  it("Should not allow more than more mints than PUB_MINT_MAX_PER_TX", async () => {
+  it("Should not allow more mints than PUB_MINT_MAX_PER_TX", async () => {
     nftStakingContract.setPublicMintActive(true);
 
     await expect(
-      nftStakingContract.publicMint(2, {
-        value: ethers.utils.parseEther(".16"),
+      nftStakingContract.publicMint(4, {
+        value: ethers.utils.parseEther(".24"),
       })
     ).to.be.revertedWith("TooManyNFTsInSingleTx");
   });
@@ -257,8 +257,84 @@ describe("NftStakingContract", () => {
 
     await nftStakingContract.toggleStaking([0]);
 
-    expect(
-      await nftStakingContract.transferFrom(owner.address, address1.address, 0)
+    await expect(
+      nftStakingContract.transferFrom(owner.address, address1.address, 0)
     ).to.be.revertedWith("Staking Active");
+  });
+
+  it("Should allow multiple NFTs to be staked and unstaked at the same time", async () => {
+    nftStakingContract.setPublicMintActive(true);
+
+    await nftStakingContract.publicMint(2, {
+      value: ethers.utils.parseEther(".16"),
+    });
+
+    await nftStakingContract.setStakingOpen(true);
+
+    await nftStakingContract.toggleStaking([0, 1]);
+
+    await expect(
+      nftStakingContract.transferFrom(owner.address, address1.address, 0)
+    ).to.be.revertedWith("Staking Active");
+
+    await expect(
+      nftStakingContract.transferFrom(owner.address, address1.address, 1)
+    ).to.be.revertedWith("Staking Active");
+
+    // console.log(await nftStakingContract.stakingPeriod(0));
+
+    await nftStakingContract.toggleStaking([0, 1]);
+
+    await expect((await nftStakingContract.stakingPeriod(0)).staking).to.equal(
+      false
+    );
+    await expect((await nftStakingContract.stakingPeriod(1)).staking).to.equal(
+      false
+    );
+  });
+
+  it("Should return a valid stake period when stakingPeriod is called", async () => {
+    nftStakingContract.setPublicMintActive(true);
+
+    await nftStakingContract.publicMint(1, {
+      value: ethers.utils.parseEther(".08"),
+    });
+
+    await nftStakingContract.setStakingOpen(true);
+
+    await nftStakingContract.toggleStaking([0]);
+
+    await expect(
+      nftStakingContract.transferFrom(owner.address, address1.address, 0)
+    ).to.be.revertedWith("Staking Active");
+
+    await expect(
+      parseFloat((await nftStakingContract.stakingPeriod(0)).current)
+    ).to.be.greaterThan(0);
+
+    await expect(
+      parseFloat((await nftStakingContract.stakingPeriod(0)).total)
+    ).to.be.greaterThan(0);
+
+    await nftStakingContract.toggleStaking([0]);
+
+    await expect((await nftStakingContract.stakingPeriod(0)).current).to.equal(
+      0
+    );
+    await expect(
+      parseFloat((await nftStakingContract.stakingPeriod(0)).total)
+    ).to.be.greaterThan(0);
+  });
+
+  it("Should not allow staking when global staking is turned off", async () => {
+    nftStakingContract.setPublicMintActive(true);
+
+    await nftStakingContract.publicMint(1, {
+      value: ethers.utils.parseEther(".08"),
+    });
+
+    await expect(nftStakingContract.toggleStaking([0])).to.be.revertedWith(
+      "StakingClosed"
+    );
   });
 });

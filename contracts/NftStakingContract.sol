@@ -31,11 +31,11 @@ error StakingClosed();
 
 contract NftStakingContract is ERC721A, Ownable, ReentrancyGuard {
   // declares the maximum amount of tokens that can be minted
-  uint256 public constant MAX_TOTAL_TOKENS = 3;
+  uint256 public constant MAX_TOTAL_TOKENS = 4;
 
   // max number of mints per transaction
   uint256 public constant ALLOW_LIST_MINT_MAX_PER_TX = 1;
-  uint256 public constant PUB_MINT_MAX_PER_TX = 1;
+  uint256 public constant PUB_MINT_MAX_PER_TX = 2;
 
   // price of mints depending on state of sale
   uint256 public itemPriceAl = 0.06 ether;
