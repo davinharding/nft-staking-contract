@@ -47,7 +47,7 @@ describe("NftStakingContract", () => {
 
     nftStakingContract.setAllowlistMintActive(true);
 
-    nftStakingContract.connect(address1).allowlistMint(proof, 1, {
+    await nftStakingContract.connect(address1).allowlistMint(proof, 1, {
       value: ethers.utils.parseEther(".06"),
     });
 
@@ -83,6 +83,7 @@ describe("NftStakingContract", () => {
 
   it("Should not allow allowlist mints with invalid proof/root/leaf", async () => {
     const leaf = keccak256(address3.address); // address3 is not in the merkle tree
+
     const proof = tree.getHexProof(leaf);
 
     nftStakingContract.setAllowlistMintActive(true);
@@ -243,5 +244,21 @@ describe("NftStakingContract", () => {
         value: ethers.utils.parseEther(".16"),
       })
     ).to.be.revertedWith("TooManyNFTsInSingleTx");
+  });
+
+  it("Should not allow transfers while staked", async () => {
+    nftStakingContract.setPublicMintActive(true);
+
+    await nftStakingContract.publicMint(1, {
+      value: ethers.utils.parseEther(".08"),
+    });
+
+    await nftStakingContract.setStakingOpen(true);
+
+    await nftStakingContract.toggleStaking([0]);
+
+    expect(
+      await nftStakingContract.transferFrom(owner.address, address1.address, 0)
+    ).to.be.revertedWith("Staking Active");
   });
 });

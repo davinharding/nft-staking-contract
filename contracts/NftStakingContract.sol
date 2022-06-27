@@ -185,7 +185,7 @@ contract NftStakingContract is ERC721A, Ownable, ReentrancyGuard {
   ) internal view override {
     uint256 tokenId = startTokenId;
     for (uint256 end = tokenId + quantity; tokenId < end; ++tokenId) {
-      if(stakingStarted[tokenId] != 0 || stakingTransfer == 1) revert StakingActiveForThisNft();
+      require(stakingStarted[tokenId] == 0 || stakingTransfer == 2, "Staking Active");
     }
   }
 
